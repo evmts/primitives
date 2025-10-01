@@ -187,8 +187,8 @@ pub fn hasStorageKey(list: AccessList, address: Address, key: Hash) bool {
 /// }
 /// ```
 pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
-    var result = std.ArrayList(AccessListEntry).init(allocator);
-    defer result.deinit();
+    var result = std.ArrayList(AccessListEntry){};
+    defer result.deinit(allocator);
 
     for (list) |entry| {
         // Check if address already exists in result
@@ -196,11 +196,11 @@ pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
         for (result.items) |*existing| {
             if (existing.address.eql(entry.address)) {
                 // Merge storage keys
-                var keys = std.ArrayList(Hash).init(allocator);
-                defer keys.deinit();
+                var keys = std.ArrayList(Hash){};
+                defer keys.deinit(allocator);
 
                 // Add existing keys
-                try keys.appendSlice(existing.storage_keys);
+                try keys.appendSlice(allocator, existing.storage_keys);
 
                 // Add new keys if not duplicate
                 for (entry.storage_keys) |new_key| {
@@ -212,14 +212,14 @@ pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
                         }
                     }
                     if (!is_duplicate) {
-                        try keys.append(new_key);
+                        try keys.append(allocator, new_key);
                     }
                 }
 
                 // Replace the storage keys with merged list
                 // Note: This leaks the old storage_keys if they were allocated
                 // In practice, the caller should manage this appropriately
-                existing.storage_keys = try keys.toOwnedSlice();
+                existing.storage_keys = try keys.toOwnedSlice(allocator);
                 found = true;
                 break;
             }
@@ -227,14 +227,14 @@ pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
 
         if (!found) {
             // New address, duplicate the storage keys
-            try result.append(.{
+            try result.append(allocator, .{
                 .address = entry.address,
                 .storage_keys = try allocator.dupe(Hash, entry.storage_keys),
             });
         }
     }
 
-    return try result.toOwnedSlice();
+    return try result.toOwnedSlice(allocator);
 }
 
 // =============================================================================
@@ -265,12 +265,12 @@ pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
 /// ```
 pub fn serialize(allocator: Allocator, list: AccessList) ![]u8 {
     // Encode each entry as [address, [storageKeys...]]
-    var entries = std.ArrayList([]const u8).init(allocator);
+    var entries = std.ArrayList([]const u8){};
     defer {
         for (entries.items) |item| {
             allocator.free(item);
         }
-        entries.deinit();
+        entries.deinit(allocator);
     }
 
     for (list) |entry| {
@@ -279,17 +279,17 @@ pub fn serialize(allocator: Allocator, list: AccessList) ![]u8 {
         defer allocator.free(encoded_address);
 
         // Encode each storage key
-        var encoded_keys = std.ArrayList([]const u8).init(allocator);
+        var encoded_keys = std.ArrayList([]const u8){};
         defer {
             for (encoded_keys.items) |item| {
                 allocator.free(item);
             }
-            encoded_keys.deinit();
+            encoded_keys.deinit(allocator);
         }
 
         for (entry.storage_keys) |key| {
             const encoded_key = try rlp.encodeBytes(allocator, &key.bytes);
-            try encoded_keys.append(encoded_key);
+            try encoded_keys.append(allocator, encoded_key);
         }
 
         // Encode the list of storage keys
@@ -299,7 +299,7 @@ pub fn serialize(allocator: Allocator, list: AccessList) ![]u8 {
         // Create entry as [address, storageKeysList]
         const entry_items = [_][]const u8{ encoded_address, keys_list_encoded };
         const entry_encoded = try rlp.encode(allocator, &entry_items);
-        try entries.append(entry_encoded);
+        try entries.append(allocator, entry_encoded);
     }
 
     // Encode the entire access list

@@ -6,6 +6,17 @@ pub const Hash = @import("primitives/hash.zig").Hash;
 pub const Hex = @import("primitives/hex.zig").Hex;
 pub const Numeric = @import("primitives/numeric.zig").Numeric;
 
+// Access List (EIP-2930) - now a primitive
+pub const AccessListEntry = @import("primitives/access_list.zig").AccessListEntry;
+pub const AccessList = @import("primitives/access_list.zig").AccessList;
+pub const ACCESS_LIST_ADDRESS_COST = @import("primitives/access_list.zig").ACCESS_LIST_ADDRESS_COST;
+pub const ACCESS_LIST_STORAGE_KEY_COST = @import("primitives/access_list.zig").ACCESS_LIST_STORAGE_KEY_COST;
+pub const calculateGas = @import("primitives/access_list.zig").calculateGas;
+pub const hasAddress = @import("primitives/access_list.zig").hasAddress;
+pub const hasStorageKey = @import("primitives/access_list.zig").hasStorageKey;
+pub const deduplicate = @import("primitives/access_list.zig").deduplicate;
+pub const serializeAccessList = @import("primitives/access_list.zig").serialize;
+
 // Encoding & Serialization
 pub const RLP = @import("encoding/rlp.zig").RLP;
 pub const ABI = @import("encoding/abi.zig").ABI;
@@ -18,11 +29,12 @@ pub const BlobTransaction = @import("transactions/blob.zig").BlobTransaction;
 pub const SetCodeTransaction = @import("transactions/set_code.zig").SetCodeTransaction;
 pub const Authorization = @import("transactions/set_code.zig").Authorization;
 
-// Access Lists
-pub const AccessList = @import("transactions/access_list.zig").AccessList;
-pub const AccessListEntry = @import("transactions/access_list.zig").AccessListEntry;
-pub const ACCESS_LIST_ADDRESS_COST = @import("transactions/access_list.zig").ACCESS_LIST_ADDRESS_COST;
-pub const ACCESS_LIST_STORAGE_KEY_COST = @import("transactions/access_list.zig").ACCESS_LIST_STORAGE_KEY_COST;
+// Access Lists (old location - kept for backward compatibility)
+// Note: These now re-export from primitives/access_list.zig
+// pub const AccessList = @import("transactions/access_list.zig").AccessList;
+// pub const AccessListEntry = @import("transactions/access_list.zig").AccessListEntry;
+// pub const ACCESS_LIST_ADDRESS_COST = @import("transactions/access_list.zig").ACCESS_LIST_ADDRESS_COST;
+// pub const ACCESS_LIST_STORAGE_KEY_COST = @import("transactions/access_list.zig").ACCESS_LIST_STORAGE_KEY_COST;
 
 // Blob-related types
 pub const Blob = @import("transactions/blob.zig").Blob;
