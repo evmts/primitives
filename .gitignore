@@ -34,5 +34,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 # Zig build artifacts
+.zig-cache/
 zig-cache/
 zig-out/
