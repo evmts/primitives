@@ -1,23 +1,70 @@
-//! By convention, root.zig is the root source file when making a library.
 const std = @import("std");
 
-pub fn bufferedPrint() !void {
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
+// Core Types
+pub const Address = @import("primitives/address.zig").Address;
+pub const Hash = @import("primitives/hash.zig").Hash;
+pub const Hex = @import("primitives/hex.zig").Hex;
+pub const Numeric = @import("primitives/numeric.zig").Numeric;
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+// Encoding & Serialization
+pub const RLP = @import("encoding/rlp.zig").RLP;
+pub const ABI = @import("encoding/abi.zig").ABI;
 
-    try stdout.flush(); // Don't forget to flush!
-}
+// Transactions
+pub const TransactionType = @import("transactions/transaction_type.zig").TransactionType;
+pub const LegacyTransaction = @import("transactions/legacy.zig").LegacyTransaction;
+pub const EIP1559Transaction = @import("transactions/eip1559.zig").EIP1559Transaction;
+pub const BlobTransaction = @import("transactions/blob.zig").BlobTransaction;
+pub const SetCodeTransaction = @import("transactions/set_code.zig").SetCodeTransaction;
+pub const Authorization = @import("transactions/set_code.zig").Authorization;
 
-pub fn add(a: i32, b: i32) i32 {
-    return a + b;
-}
+// Access Lists
+pub const AccessList = @import("transactions/access_list.zig").AccessList;
+pub const AccessListEntry = @import("transactions/access_list.zig").AccessListEntry;
+pub const ACCESS_LIST_ADDRESS_COST = @import("transactions/access_list.zig").ACCESS_LIST_ADDRESS_COST;
+pub const ACCESS_LIST_STORAGE_KEY_COST = @import("transactions/access_list.zig").ACCESS_LIST_STORAGE_KEY_COST;
 
-test "basic add functionality" {
-    try std.testing.expect(add(3, 7) == 10);
+// Blob-related types
+pub const Blob = @import("transactions/blob.zig").Blob;
+pub const BlobCommitment = @import("transactions/blob.zig").BlobCommitment;
+pub const BlobProof = @import("transactions/blob.zig").BlobProof;
+pub const commitmentToVersionedHash = @import("transactions/blob.zig").commitmentToVersionedHash;
+pub const calculateBlobBaseFee = @import("transactions/blob.zig").calculateBlobBaseFee;
+
+// Gas
+pub const Gas = @import("gas/constants.zig").Gas;
+
+// Opcodes
+pub const Opcode = @import("opcodes/opcode.zig").Opcode;
+
+// EIPs and Hardforks
+pub const Hardfork = @import("eips/hardfork.zig").Hardfork;
+pub const Eips = @import("eips/eips.zig").Eips;
+pub const EipOverride = @import("eips/eips.zig").EipOverride;
+pub const SstoreGasCost = @import("eips/eips.zig").SstoreGasCost;
+
+// Logs
+pub const EventLog = @import("logs/event_log.zig").EventLog;
+pub const filterLogs = @import("logs/event_log.zig").filterLogs;
+
+// State Management
+pub const StorageKey = @import("state/storage_key.zig").StorageKey;
+pub const EMPTY_CODE_HASH = @import("state/constants.zig").EMPTY_CODE_HASH;
+pub const EMPTY_TRIE_ROOT = @import("state/constants.zig").EMPTY_TRIE_ROOT;
+
+// System Contracts
+pub const BeaconRootsContract = @import("system_contracts/beacon_roots.zig").BeaconRootsContract;
+pub const BEACON_ROOTS_ADDRESS = @import("system_contracts/beacon_roots.zig").BEACON_ROOTS_ADDRESS;
+pub const SYSTEM_ADDRESS = @import("system_contracts/beacon_roots.zig").SYSTEM_ADDRESS;
+pub const HISTORY_BUFFER_LENGTH = @import("system_contracts/beacon_roots.zig").HISTORY_BUFFER_LENGTH;
+pub const BEACON_ROOT_READ_GAS = @import("system_contracts/beacon_roots.zig").BEACON_ROOT_READ_GAS;
+pub const BEACON_ROOT_WRITE_GAS = @import("system_contracts/beacon_roots.zig").BEACON_ROOT_WRITE_GAS;
+pub const computeSlots = @import("system_contracts/beacon_roots.zig").computeSlots;
+
+// Frame Handlers
+pub const FrameConfig = @import("handlers/frame_interface.zig").FrameConfig;
+pub const Handlers = @import("handlers/frame_interface.zig").Handlers;
+
+test "import all modules" {
+    std.testing.refAllDecls(@This());
 }
