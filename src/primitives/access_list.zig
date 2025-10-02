@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Address = @import("address.zig");
-const Hash = @import("hash.zig");
+const Address = @import("address.zig").Address;
+const Hash = @import("hash.zig").Hash;
 const rlp = @import("../encoding/rlp.zig");
 
 /// EIP-2930 Access List
@@ -217,8 +217,8 @@ pub fn deduplicate(allocator: Allocator, list: AccessList) !AccessList {
                 }
 
                 // Replace the storage keys with merged list
-                // Note: This leaks the old storage_keys if they were allocated
-                // In practice, the caller should manage this appropriately
+                // Free the old storage keys to prevent memory leak
+                allocator.free(existing.storage_keys);
                 existing.storage_keys = try keys.toOwnedSlice(allocator);
                 found = true;
                 break;
@@ -681,7 +681,7 @@ test "AccessList: integration - full workflow" {
 
     // Calculate original gas cost
     const original_gas = calculateGas(&access_list);
-    try std.testing.expectEqual(@as(u64, 12200), original_gas); // 3*2400 + 4*1900
+    try std.testing.expectEqual(@as(u64, 14800), original_gas); // 3*2400 + 4*1900 = 7200 + 7600
 
     // Deduplicate
     const deduped = try deduplicate(allocator, &access_list);
