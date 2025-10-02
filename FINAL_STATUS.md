@@ -75,8 +75,7 @@ Comprehensive implementation guide:
 | LegacyTransaction RLP | ✅ Complete | serialize, deserialize, signingHash + 9 helpers |
 | SetCodeTransaction RLP | ✅ Complete | serialize, deserialize, Authorization.signingHash + 14 helpers |
 | Transaction C FFI | ✅ 75% Complete | new/free/serialize done, sign blocked by secp256k1 |
-| secp256k1 Documentation | ✅ Complete | SECP256K1_INTEGRATION.md with full guide |
-| Frame Handlers Documentation | ✅ Complete | FRAME_HANDLERS.md with architecture explanation |
+| secp256k1 Documentation | ✅ Complete | WHY_SECP256K1.md + SECP256K1_INTEGRATION.md |
 
 ### Files Modified
 
