@@ -275,21 +275,95 @@ pub fn validateSignature(self: LegacyTransaction) Error!void {
 ///
 /// NOTE: Requires RLP encoding implementation (not yet available)
 pub fn serialize(self: LegacyTransaction, allocator: Allocator) Error![]u8 {
-    // TODO: This requires RLP encoding implementation
-    // Implementation steps:
-    // 1. Encode nonce as RLP integer
-    // 2. Encode gas_price as RLP integer
-    // 3. Encode gas_limit as RLP integer
-    // 4. Encode to as RLP bytes (empty for contract creation)
-    // 5. Encode value as RLP integer
-    // 6. Encode data as RLP bytes
-    // 7. Encode v as RLP integer
-    // 8. Encode r as RLP bytes (strip leading zeros)
-    // 9. Encode s as RLP bytes (strip leading zeros)
-    // 10. Wrap in RLP list
-    _ = self;
-    _ = allocator;
-    return error.InvalidRlpEncoding; // Placeholder until RLP is implemented
+    var items = std.ArrayList(u8){};
+    defer items.deinit(allocator);
+
+    // 1. nonce
+    const nonce_bytes = try u64ToMinimalBytes(allocator, self.nonce);
+    defer allocator.free(nonce_bytes);
+    const nonce_encoded = try RLP.encodeBytes(allocator, nonce_bytes);
+    defer allocator.free(nonce_encoded);
+    try items.appendSlice(allocator, nonce_encoded);
+
+    // 2. gas_price
+    const gas_price_bytes = try u256ToMinimalBytes(allocator, self.gas_price);
+    defer allocator.free(gas_price_bytes);
+    const gas_price_encoded = try RLP.encodeBytes(allocator, gas_price_bytes);
+    defer allocator.free(gas_price_encoded);
+    try items.appendSlice(allocator, gas_price_encoded);
+
+    // 3. gas_limit
+    const gas_limit_bytes = try u64ToMinimalBytes(allocator, self.gas_limit);
+    defer allocator.free(gas_limit_bytes);
+    const gas_limit_encoded = try RLP.encodeBytes(allocator, gas_limit_bytes);
+    defer allocator.free(gas_limit_encoded);
+    try items.appendSlice(allocator, gas_limit_encoded);
+
+    // 4. to (empty for contract creation)
+    if (self.to) |to_addr| {
+        const to_encoded = try RLP.encodeBytes(allocator, &to_addr.bytes);
+        defer allocator.free(to_encoded);
+        try items.appendSlice(allocator, to_encoded);
+    } else {
+        // Empty address for contract creation
+        const empty_encoded = try RLP.encodeBytes(allocator, &[_]u8{});
+        defer allocator.free(empty_encoded);
+        try items.appendSlice(allocator, empty_encoded);
+    }
+
+    // 5. value
+    const value_bytes = try u256ToMinimalBytes(allocator, self.value);
+    defer allocator.free(value_bytes);
+    const value_encoded = try RLP.encodeBytes(allocator, value_bytes);
+    defer allocator.free(value_encoded);
+    try items.appendSlice(allocator, value_encoded);
+
+    // 6. data
+    const data_encoded = try RLP.encodeBytes(allocator, self.data);
+    defer allocator.free(data_encoded);
+    try items.appendSlice(allocator, data_encoded);
+
+    // 7. v
+    const v_bytes = try u64ToMinimalBytes(allocator, self.v);
+    defer allocator.free(v_bytes);
+    const v_encoded = try RLP.encodeBytes(allocator, v_bytes);
+    defer allocator.free(v_encoded);
+    try items.appendSlice(allocator, v_encoded);
+
+    // 8. r (strip leading zeros)
+    const r_bytes = stripLeadingZeros(&self.r);
+    const r_encoded = try RLP.encodeBytes(allocator, r_bytes);
+    defer allocator.free(r_encoded);
+    try items.appendSlice(allocator, r_encoded);
+
+    // 9. s (strip leading zeros)
+    const s_bytes = stripLeadingZeros(&self.s);
+    const s_encoded = try RLP.encodeBytes(allocator, s_bytes);
+    defer allocator.free(s_encoded);
+    try items.appendSlice(allocator, s_encoded);
+
+    // Wrap in RLP list
+    const payload = try items.toOwnedSlice(allocator);
+    defer allocator.free(payload);
+
+    // Calculate list header
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+
+    // Add RLP list header
+    if (payload.len < 56) {
+        try result.append(allocator, 0xc0 + @as(u8, @intCast(payload.len)));
+    } else {
+        const len_bytes = try encodeLength(allocator, payload.len);
+        defer allocator.free(len_bytes);
+        try result.append(allocator, 0xf7 + @as(u8, @intCast(len_bytes.len)));
+        try result.appendSlice(allocator, len_bytes);
+    }
+
+    // Add payload
+    try result.appendSlice(allocator, payload);
+
+    return try result.toOwnedSlice(allocator);
 }
 
 /// Deserialize transaction from RLP-encoded bytes
@@ -310,22 +384,43 @@ pub fn serialize(self: LegacyTransaction, allocator: Allocator) Error![]u8 {
 ///
 /// NOTE: Requires RLP decoding implementation (not yet available)
 pub fn deserialize(allocator: Allocator, data: []const u8) Error!LegacyTransaction {
-    // TODO: This requires RLP decoding implementation
-    // Implementation steps:
-    // 1. Decode RLP list (must have 9 elements)
-    // 2. Extract nonce (RLP integer -> u64)
-    // 3. Extract gas_price (RLP integer -> u256)
-    // 4. Extract gas_limit (RLP integer -> u64)
-    // 5. Extract to (RLP bytes -> ?Address, empty = null)
-    // 6. Extract value (RLP integer -> u256)
-    // 7. Extract data (RLP bytes -> []const u8, may need allocation)
-    // 8. Extract v (RLP integer -> u64)
-    // 9. Extract r (RLP bytes -> [32]u8)
-    // 10. Extract s (RLP bytes -> [32]u8)
-    // 11. Validate all fields
-    _ = allocator;
-    _ = data;
-    return error.InvalidRlpEncoding; // Placeholder until RLP is implemented
+    // Decode RLP payload
+    const decoded = RLP.decode(allocator, data, false) catch return error.InvalidRlpEncoding;
+    defer decoded.data.deinit(allocator);
+
+    // Must be a list
+    const list = switch (decoded.data) {
+        .List => |l| l,
+        .String => return error.InvalidRlpEncoding,
+    };
+
+    // Must have 9 elements
+    if (list.len != 9) {
+        return error.InvalidRlpEncoding;
+    }
+
+    // Extract fields
+    const nonce = try extractU64(list[0]);
+    const gas_price = try extractU256(list[1]);
+    const gas_limit = try extractU64(list[2]);
+    const to = try extractOptionalAddress(list[3]);
+    const value = try extractU256(list[4]);
+    const tx_data = try extractBytes(allocator, list[5]);
+    const v = try extractU64(list[6]);
+    const r = try extractHash(list[7]);
+    const s = try extractHash(list[8]);
+
+    return LegacyTransaction{
+        .nonce = nonce,
+        .gas_price = gas_price,
+        .gas_limit = gas_limit,
+        .to = to,
+        .value = value,
+        .data = tx_data,
+        .v = v,
+        .r = r,
+        .s = s,
+    };
 }
 
 /// Compute transaction hash (Keccak256 of RLP encoding)
@@ -371,17 +466,93 @@ pub fn hash(self: LegacyTransaction, allocator: Allocator) Error!Hash {
 ///
 /// NOTE: Requires RLP encoding implementation (not yet available)
 pub fn signingHash(self: LegacyTransaction, allocator: Allocator, chain_id: ?u64) Error!Hash {
-    // TODO: This requires RLP encoding implementation
-    // Implementation steps:
-    // 1. If chain_id is null (pre-EIP-155):
-    //    Encode RLP([nonce, gasPrice, gasLimit, to, value, data])
-    // 2. If chain_id is not null (EIP-155):
-    //    Encode RLP([nonce, gasPrice, gasLimit, to, value, data, chain_id, 0, 0])
-    // 3. Compute keccak256 of encoded data
-    _ = self;
-    _ = allocator;
-    _ = chain_id;
-    return error.InvalidRlpEncoding; // Placeholder until RLP is implemented
+    var items = std.ArrayList(u8){};
+    defer items.deinit(allocator);
+
+    // Encode base fields: nonce, gasPrice, gasLimit, to, value, data
+    // 1. nonce
+    const nonce_bytes = try u64ToMinimalBytes(allocator, self.nonce);
+    defer allocator.free(nonce_bytes);
+    const nonce_encoded = try RLP.encodeBytes(allocator, nonce_bytes);
+    defer allocator.free(nonce_encoded);
+    try items.appendSlice(allocator, nonce_encoded);
+
+    // 2. gas_price
+    const gas_price_bytes = try u256ToMinimalBytes(allocator, self.gas_price);
+    defer allocator.free(gas_price_bytes);
+    const gas_price_encoded = try RLP.encodeBytes(allocator, gas_price_bytes);
+    defer allocator.free(gas_price_encoded);
+    try items.appendSlice(allocator, gas_price_encoded);
+
+    // 3. gas_limit
+    const gas_limit_bytes = try u64ToMinimalBytes(allocator, self.gas_limit);
+    defer allocator.free(gas_limit_bytes);
+    const gas_limit_encoded = try RLP.encodeBytes(allocator, gas_limit_bytes);
+    defer allocator.free(gas_limit_encoded);
+    try items.appendSlice(allocator, gas_limit_encoded);
+
+    // 4. to
+    if (self.to) |to_addr| {
+        const to_encoded = try RLP.encodeBytes(allocator, &to_addr.bytes);
+        defer allocator.free(to_encoded);
+        try items.appendSlice(allocator, to_encoded);
+    } else {
+        const empty_encoded = try RLP.encodeBytes(allocator, &[_]u8{});
+        defer allocator.free(empty_encoded);
+        try items.appendSlice(allocator, empty_encoded);
+    }
+
+    // 5. value
+    const value_bytes = try u256ToMinimalBytes(allocator, self.value);
+    defer allocator.free(value_bytes);
+    const value_encoded = try RLP.encodeBytes(allocator, value_bytes);
+    defer allocator.free(value_encoded);
+    try items.appendSlice(allocator, value_encoded);
+
+    // 6. data
+    const data_encoded = try RLP.encodeBytes(allocator, self.data);
+    defer allocator.free(data_encoded);
+    try items.appendSlice(allocator, data_encoded);
+
+    // Add EIP-155 fields if chain_id is provided
+    if (chain_id) |cid| {
+        // 7. chain_id
+        const chain_id_bytes = try u64ToMinimalBytes(allocator, cid);
+        defer allocator.free(chain_id_bytes);
+        const chain_id_encoded = try RLP.encodeBytes(allocator, chain_id_bytes);
+        defer allocator.free(chain_id_encoded);
+        try items.appendSlice(allocator, chain_id_encoded);
+
+        // 8 & 9. Two empty bytes for 0, 0
+        const zero_encoded = try RLP.encodeBytes(allocator, &[_]u8{});
+        defer allocator.free(zero_encoded);
+        try items.appendSlice(allocator, zero_encoded);
+        try items.appendSlice(allocator, zero_encoded);
+    }
+
+    // Wrap in RLP list
+    const payload = try items.toOwnedSlice(allocator);
+    defer allocator.free(payload);
+
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+
+    // Add RLP list header
+    if (payload.len < 56) {
+        try result.append(allocator, 0xc0 + @as(u8, @intCast(payload.len)));
+    } else {
+        const len_bytes = try encodeLength(allocator, payload.len);
+        defer allocator.free(len_bytes);
+        try result.append(allocator, 0xf7 + @as(u8, @intCast(len_bytes.len)));
+        try result.appendSlice(allocator, len_bytes);
+    }
+
+    try result.appendSlice(allocator, payload);
+
+    const encoded = try result.toOwnedSlice(allocator);
+    defer allocator.free(encoded);
+
+    return Hash.keccak256(encoded);
 }
 
 // =============================================================================
@@ -574,6 +745,149 @@ pub fn format(
     }
 
     try writer.writeAll(")");
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/// Convert u256 to minimal big-endian bytes (strip leading zeros)
+fn u256ToMinimalBytes(allocator: Allocator, value: u256) ![]u8 {
+    if (value == 0) {
+        return try allocator.dupe(u8, &[_]u8{});
+    }
+
+    var bytes: [32]u8 = undefined;
+    std.mem.writeInt(u256, &bytes, value, .big);
+
+    // Find first non-zero byte
+    var start: usize = 0;
+    while (start < 32 and bytes[start] == 0) {
+        start += 1;
+    }
+
+    return try allocator.dupe(u8, bytes[start..]);
+}
+
+/// Convert u64 to minimal big-endian bytes (strip leading zeros)
+fn u64ToMinimalBytes(allocator: Allocator, value: u64) ![]u8 {
+    if (value == 0) {
+        return try allocator.dupe(u8, &[_]u8{});
+    }
+
+    var bytes: [8]u8 = undefined;
+    std.mem.writeInt(u64, &bytes, value, .big);
+
+    // Find first non-zero byte
+    var start: usize = 0;
+    while (start < 8 and bytes[start] == 0) {
+        start += 1;
+    }
+
+    return try allocator.dupe(u8, bytes[start..]);
+}
+
+/// Strip leading zeros from byte array
+fn stripLeadingZeros(bytes: []const u8) []const u8 {
+    var start: usize = 0;
+    while (start < bytes.len and bytes[start] == 0) {
+        start += 1;
+    }
+    if (start >= bytes.len) {
+        return &[_]u8{};
+    }
+    return bytes[start..];
+}
+
+/// Encode length as bytes (for RLP long form)
+fn encodeLength(allocator: Allocator, length: usize) ![]u8 {
+    var len_bytes = std.ArrayList(u8){};
+    defer len_bytes.deinit(allocator);
+
+    var temp = length;
+    while (temp > 0) {
+        try len_bytes.insert(allocator, 0, @as(u8, @intCast(temp & 0xff)));
+        temp >>= 8;
+    }
+
+    return try len_bytes.toOwnedSlice(allocator);
+}
+
+/// Extract u64 from RLP decoded value
+fn extractU64(item: RLP.Data) !u64 {
+    const bytes = switch (item) {
+        .String => |s| s,
+        .List => return error.InvalidRlpEncoding,
+    };
+
+    if (bytes.len == 0) return 0;
+    if (bytes.len > 8) return error.InvalidRlpEncoding;
+
+    var value: u64 = 0;
+    for (bytes) |byte| {
+        value = (value << 8) | byte;
+    }
+    return value;
+}
+
+/// Extract u256 from RLP decoded value
+fn extractU256(item: RLP.Data) !u256 {
+    const bytes = switch (item) {
+        .String => |s| s,
+        .List => return error.InvalidRlpEncoding,
+    };
+
+    if (bytes.len == 0) return 0;
+    if (bytes.len > 32) return error.InvalidRlpEncoding;
+
+    var value: u256 = 0;
+    for (bytes) |byte| {
+        value = (value << 8) | byte;
+    }
+    return value;
+}
+
+/// Extract optional address from RLP decoded value
+fn extractOptionalAddress(item: RLP.Data) !?Address {
+    const bytes = switch (item) {
+        .String => |s| s,
+        .List => return error.InvalidRlpEncoding,
+    };
+
+    if (bytes.len == 0) return null;
+    if (bytes.len != 20) return error.InvalidRlpEncoding;
+
+    var addr: Address = undefined;
+    @memcpy(&addr.bytes, bytes);
+    return addr;
+}
+
+/// Extract hash from RLP decoded value
+fn extractHash(item: RLP.Data) ![32]u8 {
+    const bytes = switch (item) {
+        .String => |s| s,
+        .List => return error.InvalidRlpEncoding,
+    };
+
+    var result: [32]u8 = [_]u8{0} ** 32;
+
+    // If bytes is less than 32, pad with leading zeros
+    if (bytes.len > 32) return error.InvalidRlpEncoding;
+
+    const offset = 32 - bytes.len;
+    @memcpy(result[offset..], bytes);
+
+    return result;
+}
+
+/// Extract bytes from RLP decoded value (allocates new slice)
+fn extractBytes(allocator: Allocator, item: RLP.Data) ![]u8 {
+    const bytes = switch (item) {
+        .String => |s| s,
+        .List => return error.InvalidRlpEncoding,
+    };
+
+    return try allocator.dupe(u8, bytes);
 }
 
 // =============================================================================
