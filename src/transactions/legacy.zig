@@ -73,7 +73,7 @@ pub const Error = error{
     InvalidSValue,
     /// The v value is invalid (not in valid range)
     InvalidVValue,
-} || Allocator.Error;
+} || RLP.Error;
 
 // =============================================================================
 // Construction & Initialization
@@ -1176,7 +1176,7 @@ test "LegacyTransaction: recoverSender returns error (not implemented)" {
     try std.testing.expectError(error.SignatureRecoveryFailed, tx.recoverSender());
 }
 
-test "LegacyTransaction: serialize returns error (RLP not implemented)" {
+test "LegacyTransaction: serialize produces valid RLP encoding" {
     const tx = LegacyTransaction.init(.{
         .nonce = 0,
         .gas_price = 1,
@@ -1187,7 +1187,12 @@ test "LegacyTransaction: serialize returns error (RLP not implemented)" {
     });
 
     const allocator = std.testing.allocator;
-    try std.testing.expectError(error.InvalidRlpEncoding, tx.serialize(allocator));
+    const serialized = try tx.serialize(allocator);
+    defer allocator.free(serialized);
+
+    // Should produce a valid RLP list
+    try std.testing.expect(serialized.len > 0);
+    try std.testing.expectEqual(@as(u8, 0xdf), serialized[0]); // RLP list header for length 31
 }
 
 test "LegacyTransaction: deserialize returns error (RLP not implemented)" {
