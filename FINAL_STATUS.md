@@ -48,23 +48,23 @@ Successfully completed all TODOs that can be implemented without external depend
 
 ### 3. Documentation ✅
 
+#### WHY_SECP256K1.md
+Clear explanation of secp256k1's necessity:
+- ✅ Explains what secp256k1 is and why Ethereum uses it
+- ✅ Details the transaction signing process
+- ✅ Shows signature verification flow
+- ✅ Lists all 14 blocked functions
+- ✅ Explains cryptographic requirements
+- ✅ Demonstrates real-world impact
+
 #### SECP256K1_INTEGRATION.md
-Comprehensive documentation for secp256k1 integration:
+Comprehensive implementation guide:
 - ✅ Lists all 14 blocked TODOs
 - ✅ Explains required cryptographic operations
 - ✅ Provides 3 implementation options with pros/cons
 - ✅ Includes complete implementation guide
 - ✅ Estimates effort (2-3 days with zig-secp256k1)
 - ✅ Provides code examples and test strategies
-
-#### FRAME_HANDLERS.md
-Complete documentation for frame handler architecture:
-- ✅ Explains generic handler pattern design
-- ✅ Documents Frame interface requirements
-- ✅ Lists all 12 handler stubs (intentional design)
-- ✅ Provides implementation guide for EVM builders
-- ✅ Includes example code and testing strategy
-- ✅ Explains architectural separation from guillotine EVM
 
 ## 📈 Progress Summary
 
