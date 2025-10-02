@@ -556,21 +556,21 @@ pub fn format(
     _ = options;
 
     try writer.writeAll("LegacyTx(");
-    try writer.print("nonce={}, ", .{self.nonce});
-    try writer.print("gasPrice={}, ", .{self.gas_price});
-    try writer.print("gasLimit={}, ", .{self.gas_limit});
+    try writer.print("nonce={d}, ", .{self.nonce});
+    try writer.print("gasPrice={d}, ", .{self.gas_price});
+    try writer.print("gasLimit={d}, ", .{self.gas_limit});
 
     if (self.to) |addr| {
-        try writer.print("to={}, ", .{addr});
+        try writer.print("to={any}, ", .{addr});
     } else {
         try writer.writeAll("to=null, ");
     }
 
-    try writer.print("value={}, ", .{self.value});
-    try writer.print("dataLen={}", .{self.data.len});
+    try writer.print("value={d}, ", .{self.value});
+    try writer.print("dataLen={d}", .{self.data.len});
 
     if (self.v != 0) {
-        try writer.print(", v={}", .{self.v});
+        try writer.print(", v={d}", .{self.v});
     }
 
     try writer.writeAll(")");

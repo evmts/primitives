@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const Address = @import("../primitives/address.zig");
 const Hash = @import("../primitives/hash.zig");
 const RLP = @import("../encoding/rlp.zig");
-const AccessListEntry = @import("access_list.zig").AccessListEntry;
+const AccessListEntry = @import("../primitives/access_list.zig").AccessListEntry;
 
 /// Represents an EIP-1559 transaction (Type 2)
 ///
