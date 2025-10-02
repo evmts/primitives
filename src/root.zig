@@ -80,3 +80,8 @@ pub const Handlers = @import("handlers/frame_interface.zig").Handlers;
 test "import all modules" {
     std.testing.refAllDecls(@This());
 }
+
+// C API tests
+test {
+    _ = @import("root_c_test.zig");
+}
