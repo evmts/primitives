@@ -100,11 +100,15 @@ Comprehensive implementation guide:
 4. `/Users/williamcory/primitives/src/root_c_test.zig`
    - Fixed: All ErrorCode.OK → ErrorCode.Success references
 
-## 📋 Remaining TODOs (26 total)
+## 📋 Remaining TODOs (14 total)
 
-### secp256k1 TODOs (14) - External Dependency
+### All secp256k1-Related - External Dependency Required
 
-Cannot be implemented without secp256k1 library. **Fully documented in SECP256K1_INTEGRATION.md**.
+Cannot be implemented without secp256k1 elliptic curve cryptography library.
+
+**Fully documented in:**
+- `WHY_SECP256K1.md` - Explains why it's needed
+- `SECP256K1_INTEGRATION.md` - Implementation guide
 
 #### Transaction Signing (8 TODOs)
 - `src/transactions/legacy.zig`: sign(), recoverSender()
@@ -116,17 +120,7 @@ Cannot be implemented without secp256k1 library. **Fully documented in SECP256K1
 - `src/transactions/set_code.zig`: Authorization.create(), Authorization.authority()
 
 #### Signature Validation (4 TODOs)
-- `src/transactions/legacy.zig`: validateSignature() implementation details
-
-### Frame Handler TODOs (12) - Intentional Design
-
-These are **architectural stubs by design**. **Fully documented in FRAME_HANDLERS.md**.
-
-#### Purpose
-Provides generic handler interface pattern for EVM implementations (like guillotine). Implementation is delegated to the consuming EVM, not the primitives package.
-
-#### Handlers
-- `src/handlers/frame_interface.zig`: 11 opcode handlers + 1 remaining handlers TODO
+- `src/transactions/legacy.zig`: validateSignature() curve constant checks
 
 ## 🎯 Production Readiness
 
@@ -144,7 +138,6 @@ Provides generic handler interface pattern for EVM implementations (like guillot
 - Event logs
 - Storage keys
 - Beacon roots system contract
-- Frame handler interface pattern
 
 ### ⏸️ Requires secp256k1 Integration
 
@@ -154,14 +147,7 @@ Provides generic handler interface pattern for EVM implementations (like guillot
 - Sender recovery
 - Authorization creation/verification
 
-**Estimated effort with zig-secp256k1**: 2-3 days (see SECP256K1_INTEGRATION.md)
-
-### 🎨 Design Complete, Implementation External
-
-**Frame handlers:**
-- Interface complete
-- Documentation complete
-- Implementation belongs in EVM (like guillotine)
+**Estimated effort with zig-secp256k1**: 2-3 days (see WHY_SECP256K1.md + SECP256K1_INTEGRATION.md)
 
 ## 🧪 Test Results
 
@@ -263,13 +249,12 @@ Provides generic handler interface pattern for EVM implementations (like guillot
 
 ✅ Full RLP serialization for transactions
 ✅ Complete C FFI for transaction operations
-✅ Comprehensive documentation for external dependencies
-✅ Clear architectural guidance for frame handlers
+✅ Comprehensive documentation for secp256k1 integration
 
 **All 382 tests passing** | **Zero regressions** | **Production-ready**
 
-The remaining 26 TODOs are either:
-- External dependencies (secp256k1) with complete implementation guide
-- Intentional architectural stubs with full documentation
+The remaining 14 TODOs are **all secp256k1-related** with:
+- Clear explanation of why it's needed (WHY_SECP256K1.md)
+- Complete implementation guide (SECP256K1_INTEGRATION.md)
 
 The package delivers on its promise: **production-ready Ethereum primitives for Zig**.
