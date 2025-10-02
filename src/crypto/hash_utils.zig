@@ -51,14 +51,26 @@ pub fn from_hex(hex: []const u8) !Hash {
 }
 
 pub fn from_hex_comptime(comptime hex: []const u8) Hash {
-    if (hex.len < 2 or !std.mem.eql(u8, hex[0..2], "0x"))
+    if (hex.len < 2 or hex[0] != '0' or hex[1] != 'x')
         @compileError("hex must start with '0x'");
 
     if (hex.len != 66) @compileError("hex must be 66 characters long");
 
     var hash: Hash = undefined;
-    _ = std.fmt.hexToBytes(&hash, hex[2..]) catch @compileError("invalid hex string");
+    inline for (0..32) |i| {
+        const char_index = i * 2 + 2; // +2 to skip "0x"
+        hash[i] = (charToNibble(hex[char_index]) << 4) | charToNibble(hex[char_index + 1]);
+    }
     return hash;
+}
+
+inline fn charToNibble(comptime c: u8) u8 {
+    return switch (c) {
+        '0'...'9' => c - '0',
+        'a'...'f' => c - 'a' + 10,
+        'A'...'F' => c - 'A' + 10,
+        else => @compileError("invalid hex character"),
+    };
 }
 
 // Hash utility functions

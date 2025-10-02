@@ -341,6 +341,10 @@ pub fn hash_message(message: []const u8) Hash.Hash {
 
 /// Validate signature parameters (basic validation)
 pub fn is_valid_signature(signature: Signature) bool {
+    // V should be 27, 28, or EIP-155 values (chainId * 2 + 35/36)
+    // At minimum, v should be >= 27 for valid signatures
+    if (signature.v < 27) return false;
+
     return secp256k1.unaudited_validate_signature(signature.r, signature.s);
 }
 
