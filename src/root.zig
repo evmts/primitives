@@ -64,6 +64,9 @@ pub const StorageKey = @import("state/storage_key.zig").StorageKey;
 pub const EMPTY_CODE_HASH = @import("state/constants.zig").EMPTY_CODE_HASH;
 pub const EMPTY_TRIE_ROOT = @import("state/constants.zig").EMPTY_TRIE_ROOT;
 
+// Crypto
+pub const Crypto = @import("crypto/crypto.zig");
+
 // System Contracts
 pub const BeaconRootsContract = @import("system_contracts/beacon_roots.zig").BeaconRootsContract;
 pub const BEACON_ROOTS_ADDRESS = @import("system_contracts/beacon_roots.zig").BEACON_ROOTS_ADDRESS;
