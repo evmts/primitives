@@ -141,17 +141,29 @@ pub fn init(params: struct {
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn sign(self: *LegacyTransaction, private_key: [32]u8, chain_id: u64) Error!void {
-    // TODO: This requires secp256k1 ECDSA implementation
-    // Implementation steps:
-    // 1. Compute signing hash with chain_id: hash = keccak256(rlp([nonce, gasPrice, gasLimit, to, value, data, chain_id, 0, 0]))
-    // 2. Sign hash with secp256k1.sign(hash, private_key)
-    // 3. Extract r, s, and recovery_id from signature
-    // 4. Set v = chain_id * 2 + 35 + recovery_id
-    // 5. Set r and s values
-    _ = self;
-    _ = private_key;
-    _ = chain_id;
-    return error.InvalidSignature; // Placeholder until secp256k1 is implemented
+    // Get allocator from somewhere - we'll use a page allocator for this operation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Compute signing hash with chain_id
+    const signing_hash = try self.signingHash(allocator, chain_id);
+
+    // 2. Sign hash with secp256k1
+    const Crypto = @import("../crypto/crypto.zig");
+    const signature = Crypto.unaudited_signHash(signing_hash.bytes, private_key) catch {
+        return error.InvalidSignature;
+    };
+
+    // 3. Extract recovery_id from signature
+    const recovery_id = signature.recovery_id();
+
+    // 4. Set v = chain_id * 2 + 35 + recovery_id (EIP-155)
+    self.v = chain_id * 2 + 35 + recovery_id;
+
+    // 5. Set r and s values (convert u256 to bytes)
+    std.mem.writeInt(u256, &self.r, signature.r, .big);
+    std.mem.writeInt(u256, &self.s, signature.s, .big);
 }
 
 /// Recover sender address from transaction signature
@@ -173,15 +185,48 @@ pub fn sign(self: *LegacyTransaction, private_key: [32]u8, chain_id: u64) Error!
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn recoverSender(self: LegacyTransaction) Error!Address {
-    // TODO: This requires secp256k1 ECDSA implementation
-    // Implementation steps:
-    // 1. Validate signature values (r, s in valid range, s is low per EIP-2)
-    // 2. Extract chain_id and recovery_id from v
-    // 3. Compute signing hash
-    // 4. Recover public key: pubkey = secp256k1.recover(hash, r, s, recovery_id)
-    // 5. Return Address.fromPublicKey(pubkey.x, pubkey.y)
-    _ = self;
-    return error.SignatureRecoveryFailed; // Placeholder until secp256k1 is implemented
+    // Get allocator for hash computation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Extract chain_id and recovery_id from v
+    // For EIP-155: v = chainId * 2 + 35 + recovery_id
+    // For pre-EIP-155: v = 27 + recovery_id
+    // For unsigned: v = 0
+    if (self.v == 0) {
+        return error.InvalidSignature; // Unsigned transaction
+    }
+
+    const chain_id: ?u64 = if (self.v >= 35) blk: {
+        const recovery_id_offset = (self.v - 35) % 2;
+        break :blk (self.v - 35 - recovery_id_offset) / 2;
+    } else null;
+
+    const recovery_id: u8 = if (self.v >= 35)
+        @intCast((self.v - 35) % 2)
+    else if (self.v >= 27)
+        @intCast(self.v - 27)
+    else
+        return error.InvalidVValue;
+
+    // 2. Compute signing hash
+    const signing_hash = try self.signingHash(allocator, chain_id);
+
+    // 3. Create signature struct (convert bytes to u256)
+    const Crypto = @import("../crypto/crypto.zig");
+    const r = std.mem.readInt(u256, &self.r, .big);
+    const s = std.mem.readInt(u256, &self.s, .big);
+    const signature = Crypto.Signature{
+        .r = r,
+        .s = s,
+        .v = recovery_id,
+    };
+
+    // 4. Recover address from signature
+    return Crypto.unaudited_recoverAddress(signing_hash.bytes, signature) catch {
+        return error.SignatureRecoveryFailed;
+    };
 }
 
 /// Extract chain ID from v value (EIP-155)
