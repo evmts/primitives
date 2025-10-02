@@ -73,10 +73,6 @@ pub const BEACON_ROOT_READ_GAS = @import("system_contracts/beacon_roots.zig").BE
 pub const BEACON_ROOT_WRITE_GAS = @import("system_contracts/beacon_roots.zig").BEACON_ROOT_WRITE_GAS;
 pub const computeSlots = @import("system_contracts/beacon_roots.zig").computeSlots;
 
-// Frame Handlers
-pub const FrameConfig = @import("handlers/frame_interface.zig").FrameConfig;
-pub const Handlers = @import("handlers/frame_interface.zig").Handlers;
-
 test "import all modules" {
     std.testing.refAllDecls(@This());
 }
