@@ -13,13 +13,13 @@ test "C API: Address - from_hex and to_hex" {
     const hex_str = "0x742d35Cc6641C91B6E4bb6ac9e3ff2958c94E676";
     const addr = c_api.primitives_address_from_hex(hex_str, &error_code);
     try testing.expect(addr != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer c_api.primitives_address_free(addr.?);
 
     // Convert back to hex
     const result_hex = c_api.primitives_address_to_hex(addr.?, &error_code);
     try testing.expect(result_hex != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(result_hex.?));
 
     // Verify the hex string (should be lowercase)
@@ -37,7 +37,7 @@ test "C API: Address - to_checksum" {
 
     const checksum_hex = c_api.primitives_address_to_checksum(addr.?, &error_code);
     try testing.expect(checksum_hex != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(checksum_hex.?));
 
     // Verify it contains mixed case (checksummed)
@@ -95,7 +95,7 @@ test "C API: Address - create" {
 
     const created = c_api.primitives_address_create(deployer.?, 0, &error_code);
     try testing.expect(created != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer c_api.primitives_address_free(created.?);
 
     // Should not be zero
@@ -122,7 +122,7 @@ test "C API: Address - create2" {
 
     const created = c_api.primitives_address_create2(deployer.?, &salt, 32, &init_code_hash, 32, &error_code);
     try testing.expect(created != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer c_api.primitives_address_free(created.?);
 
     // Should be deterministic
@@ -165,12 +165,12 @@ test "C API: Hash - from_hex and to_hex" {
     const hex_str = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     const hash = c_api.primitives_hash_from_hex(hex_str, &error_code);
     try testing.expect(hash != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer c_api.primitives_hash_free(hash.?);
 
     const result_hex = c_api.primitives_hash_to_hex(hash.?, &error_code);
     try testing.expect(result_hex != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(result_hex.?));
 
     const result_slice = std.mem.span(result_hex.?);
@@ -183,7 +183,7 @@ test "C API: Hash - keccak256" {
     const data = "hello world";
     const hash = c_api.primitives_hash_keccak256(data.ptr, data.len, &error_code);
     try testing.expect(hash != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer c_api.primitives_hash_free(hash.?);
 
     // Verify it's deterministic
@@ -223,7 +223,7 @@ test "C API: Hex - encode and decode" {
     const bytes = [_]u8{ 0x12, 0x34, 0xab, 0xcd };
     const hex = c_api.primitives_hex_encode(&bytes, bytes.len, &error_code);
     try testing.expect(hex != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(hex.?));
 
     const hex_slice = std.mem.span(hex.?);
@@ -233,7 +233,7 @@ test "C API: Hex - encode and decode" {
     var out_len: usize = undefined;
     const decoded = c_api.primitives_hex_decode(hex.?, &out_len, &error_code);
     try testing.expect(decoded != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(decoded.?[0..out_len]);
 
     try testing.expectEqual(@as(usize, 4), out_len);
@@ -258,7 +258,7 @@ test "C API: Numeric - parse_ether" {
     const ether_str = "1.5";
     const wei_bytes = c_api.primitives_numeric_parse_ether(ether_str, &error_code);
     try testing.expect(wei_bytes != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(wei_bytes.?[0..32]);
 
     // Verify the value (1.5 ether = 1500000000000000000 wei)
@@ -272,7 +272,7 @@ test "C API: Numeric - parse_gwei" {
     const gwei_str = "100";
     const wei_bytes = c_api.primitives_numeric_parse_gwei(gwei_str, &error_code);
     try testing.expect(wei_bytes != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(wei_bytes.?[0..32]);
 
     // Verify the value (100 gwei = 100000000000 wei)
@@ -290,7 +290,7 @@ test "C API: Numeric - format_ether" {
 
     const ether_str = c_api.primitives_numeric_format_ether(&wei_bytes, &error_code);
     try testing.expect(ether_str != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(ether_str.?));
 
     const ether_slice = std.mem.span(ether_str.?);
@@ -307,7 +307,7 @@ test "C API: Numeric - format_gwei" {
 
     const gwei_str = c_api.primitives_numeric_format_gwei(&wei_bytes, &error_code);
     try testing.expect(gwei_str != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(std.mem.span(gwei_str.?));
 
     const gwei_slice = std.mem.span(gwei_str.?);
@@ -325,7 +325,7 @@ test "C API: RLP - encode_bytes" {
     var out_len: usize = undefined;
     const encoded = c_api.primitives_rlp_encode_bytes(&bytes, bytes.len, &out_len, &error_code);
     try testing.expect(encoded != null);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
     defer std.heap.c_allocator.free(encoded.?[0..out_len]);
 
     try testing.expect(out_len > 0);
@@ -342,7 +342,7 @@ test "C API: ABI - compute_selector" {
     const signature = "transfer(address,uint256)";
     const success = c_api.primitives_abi_compute_selector(signature, &selector, &error_code);
     try testing.expect(success);
-    try testing.expectEqual(c_api.ErrorCode.OK, error_code);
+    try testing.expectEqual(c_api.ErrorCode.Success, error_code);
 
     // Verify selector is non-zero
     var is_zero = true;

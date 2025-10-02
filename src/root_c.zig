@@ -1,9 +1,15 @@
 const std = @import("std");
 const primitives = @import("root.zig");
 
+// Import transaction types
+const LegacyTransaction = primitives.LegacyTransaction;
+const EIP1559Transaction = primitives.EIP1559Transaction;
+const BlobTransaction = primitives.BlobTransaction;
+const SetCodeTransaction = primitives.SetCodeTransaction;
+
 // C-compatible error codes
 pub const ErrorCode = enum(c_int) {
-    OK = 0,
+    Success = 0,
     InvalidFormat = 1,
     InvalidLength = 2,
     InvalidChecksum = 3,
@@ -13,13 +19,34 @@ pub const ErrorCode = enum(c_int) {
     OutOfMemory = 7,
     InvalidSignature = 8,
     InvalidChainId = 9,
+    InvalidInput = 10,
+    InvalidRlpEncoding = 11,
     Unknown = 999,
 };
+
+// Convert Zig error to C error code
+fn errorToCode(err: anyerror) ErrorCode {
+    return switch (err) {
+        error.OutOfMemory => .OutOfMemory,
+        error.InvalidSignature => .InvalidSignature,
+        error.InvalidChainId => .InvalidChainId,
+        error.InvalidRlpEncoding => .InvalidRlpEncoding,
+        error.InvalidFormat => .InvalidFormat,
+        error.InvalidLength => .InvalidLength,
+        else => .Unknown,
+    };
+}
 
 // Opaque pointer types for C compatibility
 pub const CAddress = opaque {};
 pub const CHash = opaque {};
-pub const CTransaction = opaque {};
+/// C-compatible transaction wrapper
+/// Holds any transaction type with metadata
+pub const CTransaction = extern struct {
+    tx_type: u8, // 0 = Legacy, 2 = EIP1559, 3 = Blob, 4 = SetCode
+    allocator_ptr: usize, // Store allocator for cleanup
+    data_ptr: usize, // Pointer to actual transaction data
+};
 
 // ============================================================================
 // Address C API
@@ -46,7 +73,7 @@ pub export fn primitives_address_from_hex(
         return null;
     };
     c_addr.* = addr;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return @ptrCast(c_addr);
 }
 
@@ -70,7 +97,7 @@ pub export fn primitives_address_to_hex(
         return null;
     };
     @memcpy(c_str[0..hex.len], &hex);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -88,7 +115,7 @@ pub export fn primitives_address_to_checksum(
         return null;
     };
     @memcpy(c_str[0..hex.len], &hex);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -122,7 +149,7 @@ pub export fn primitives_address_create(
         return null;
     };
     c_addr.* = addr;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return @ptrCast(c_addr);
 }
 
@@ -153,7 +180,7 @@ pub export fn primitives_address_create2(
         return null;
     };
     c_addr.* = addr;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return @ptrCast(c_addr);
 }
 
@@ -181,7 +208,7 @@ pub export fn primitives_hash_from_hex(
         return null;
     };
     c_hash.* = hash;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return @ptrCast(c_hash);
 }
 
@@ -205,7 +232,7 @@ pub export fn primitives_hash_keccak256(
         return null;
     };
     c_hash.* = hash;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return @ptrCast(c_hash);
 }
 
@@ -222,7 +249,7 @@ pub export fn primitives_hash_to_hex(
         return null;
     };
     @memcpy(c_str[0..hex.len], &hex);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -256,7 +283,7 @@ pub export fn primitives_hex_encode(
     };
     @memcpy(c_str[0..hex.len], hex);
     std.heap.c_allocator.free(hex);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -278,7 +305,7 @@ pub export fn primitives_hex_decode(
     };
 
     out_len.* = bytes.len;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return bytes.ptr;
 }
 
@@ -325,7 +352,7 @@ pub export fn primitives_numeric_parse_ether(
 
     // Convert u256 to bytes (big-endian)
     std.mem.writeInt(u256, bytes[0..32], wei_value, .big);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return bytes.ptr;
 }
 
@@ -354,7 +381,7 @@ pub export fn primitives_numeric_parse_gwei(
 
     // Convert u256 to bytes (big-endian)
     std.mem.writeInt(u256, bytes[0..32], wei_value, .big);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return bytes.ptr;
 }
 
@@ -379,7 +406,7 @@ pub export fn primitives_numeric_format_ether(
     };
     @memcpy(c_str[0..ether_str.len], ether_str);
     std.heap.c_allocator.free(ether_str);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -404,7 +431,7 @@ pub export fn primitives_numeric_format_gwei(
     };
     @memcpy(c_str[0..gwei_str.len], gwei_str);
     std.heap.c_allocator.free(gwei_str);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return c_str.ptr;
 }
 
@@ -426,7 +453,7 @@ pub export fn primitives_rlp_encode_bytes(
     };
 
     out_len.* = encoded.len;
-    error_code.* = .OK;
+    error_code.* = .Success;
     return encoded.ptr;
 }
 
@@ -443,7 +470,7 @@ pub export fn primitives_abi_compute_selector(
     const sig_slice = std.mem.span(signature);
     const selector = primitives.ABI.computeSelector(sig_slice);
     @memcpy(out_selector, &selector);
-    error_code.* = .OK;
+    error_code.* = .Success;
     return true;
 }
 
@@ -451,18 +478,112 @@ pub export fn primitives_abi_compute_selector(
 // Transaction C API
 // ============================================================================
 
-/// Create legacy transaction
+/// Create legacy transaction with default values
+/// Note: This creates an unsigned transaction with minimal fields.
+/// Use separate functions to set fields before signing.
 pub export fn primitives_tx_legacy_new() ?*CTransaction {
-    @panic("TODO: implement primitives_tx_legacy_new");
+    const allocator = std.heap.c_allocator;
+
+    // Create a default legacy transaction
+    const tx = LegacyTransaction.init(.{
+        .nonce = 0,
+        .gas_price = 0,
+        .gas_limit = 21000,
+        .to = null,
+        .value = 0,
+        .data = &[_]u8{},
+    });
+
+    // Allocate transaction on heap
+    const tx_ptr = allocator.create(LegacyTransaction) catch return null;
+    tx_ptr.* = tx;
+
+    // Allocate wrapper
+    const wrapper = allocator.create(CTransaction) catch {
+        allocator.destroy(tx_ptr);
+        return null;
+    };
+
+    wrapper.* = .{
+        .tx_type = 0, // Legacy
+        .allocator_ptr = @intFromPtr(&std.heap.c_allocator),
+        .data_ptr = @intFromPtr(tx_ptr),
+    };
+
+    return wrapper;
 }
 
-/// Free transaction
+/// Free transaction and associated memory
 pub export fn primitives_tx_free(tx: *CTransaction) void {
-    _ = tx;
-    @panic("TODO: implement primitives_tx_free");
+    const allocator = std.heap.c_allocator;
+
+    // Free transaction data based on type
+    switch (tx.tx_type) {
+        0 => { // Legacy
+            const tx_ptr: *LegacyTransaction = @ptrFromInt(tx.data_ptr);
+            // Free data slice if it exists
+            if (tx_ptr.data.len > 0) {
+                allocator.free(tx_ptr.data);
+            }
+            allocator.destroy(tx_ptr);
+        },
+        2 => { // EIP1559
+            const tx_ptr: *EIP1559Transaction = @ptrFromInt(tx.data_ptr);
+            if (tx_ptr.data.len > 0) {
+                allocator.free(tx_ptr.data);
+            }
+            if (tx_ptr.access_list.len > 0) {
+                for (tx_ptr.access_list) |entry| {
+                    allocator.free(entry.storage_keys);
+                }
+                allocator.free(tx_ptr.access_list);
+            }
+            allocator.destroy(tx_ptr);
+        },
+        3 => { // Blob
+            const tx_ptr: *BlobTransaction = @ptrFromInt(tx.data_ptr);
+            if (tx_ptr.data.len > 0) {
+                allocator.free(tx_ptr.data);
+            }
+            if (tx_ptr.access_list.len > 0) {
+                for (tx_ptr.access_list) |entry| {
+                    allocator.free(entry.storage_keys);
+                }
+                allocator.free(tx_ptr.access_list);
+            }
+            if (tx_ptr.blob_versioned_hashes.len > 0) {
+                allocator.free(tx_ptr.blob_versioned_hashes);
+            }
+            allocator.destroy(tx_ptr);
+        },
+        4 => { // SetCode
+            const tx_ptr: *SetCodeTransaction = @ptrFromInt(tx.data_ptr);
+            if (tx_ptr.data.len > 0) {
+                allocator.free(tx_ptr.data);
+            }
+            if (tx_ptr.access_list.len > 0) {
+                for (tx_ptr.access_list) |entry| {
+                    allocator.free(entry.storage_keys);
+                }
+                allocator.free(tx_ptr.access_list);
+            }
+            if (tx_ptr.authorization_list.len > 0) {
+                allocator.free(tx_ptr.authorization_list);
+            }
+            allocator.destroy(tx_ptr);
+        },
+        else => {
+            // Unknown transaction type - just free wrapper
+        },
+    }
+
+    // Free wrapper
+    allocator.destroy(tx);
 }
 
 /// Sign transaction
+/// NOTE: Requires secp256k1 ECDSA implementation
+/// See SECP256K1_INTEGRATION.md for implementation guide
 pub export fn primitives_tx_sign(
     tx: *CTransaction,
     private_key: [*]const u8,
@@ -472,20 +593,58 @@ pub export fn primitives_tx_sign(
     _ = tx;
     _ = private_key;
     _ = chain_id;
-    _ = error_code;
-    @panic("TODO: implement primitives_tx_sign");
+    error_code.* = .InvalidSignature;
+    return false;
 }
 
-/// Serialize transaction (caller must free, out_len set to serialized length)
+/// Serialize transaction to RLP bytes
+/// Returns allocated buffer - caller must free with primitives_free()
+/// Sets out_len to serialized data length
 pub export fn primitives_tx_serialize(
     tx: *const CTransaction,
     out_len: *usize,
     error_code: *ErrorCode,
 ) ?[*]u8 {
-    _ = tx;
-    _ = out_len;
-    _ = error_code;
-    @panic("TODO: implement primitives_tx_serialize");
+    const allocator = std.heap.c_allocator;
+
+    const serialized = switch (tx.tx_type) {
+        0 => blk: { // Legacy
+            const tx_ptr: *const LegacyTransaction = @ptrFromInt(tx.data_ptr);
+            break :blk tx_ptr.serialize(allocator) catch |err| {
+                error_code.* = errorToCode(err);
+                return null;
+            };
+        },
+        2 => blk: { // EIP1559
+            const tx_ptr: *const EIP1559Transaction = @ptrFromInt(tx.data_ptr);
+            break :blk tx_ptr.serialize(allocator) catch |err| {
+                error_code.* = errorToCode(err);
+                return null;
+            };
+        },
+        3 => blk: { // Blob
+            const tx_ptr: *const BlobTransaction = @ptrFromInt(tx.data_ptr);
+            break :blk tx_ptr.serialize(allocator) catch |err| {
+                error_code.* = errorToCode(err);
+                return null;
+            };
+        },
+        4 => blk: { // SetCode
+            const tx_ptr: *const SetCodeTransaction = @ptrFromInt(tx.data_ptr);
+            break :blk tx_ptr.serialize(allocator) catch |err| {
+                error_code.* = errorToCode(err);
+                return null;
+            };
+        },
+        else => {
+            error_code.* = .InvalidInput;
+            return null;
+        },
+    };
+
+    out_len.* = serialized.len;
+    error_code.* = .Success;
+    return serialized.ptr;
 }
 
 // ============================================================================
