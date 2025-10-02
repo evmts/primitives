@@ -274,10 +274,6 @@ pub fn getChainId(self: LegacyTransaction) ?u64 {
 /// // Transaction has valid signature values
 /// ```
 pub fn validateSignature(self: LegacyTransaction) Error!void {
-    // TODO: Implement signature validation
-    // This requires secp256k1 curve order constant
-    // For now, basic checks only
-
     // Check v is non-zero (unsigned transactions have v=0)
     if (self.v == 0) {
         return error.InvalidVValue;
@@ -291,9 +287,33 @@ pub fn validateSignature(self: LegacyTransaction) Error!void {
         return error.InvalidSignature;
     }
 
-    // TODO: Check r < secp256k1.N
-    // TODO: Check s < secp256k1.N / 2 (EIP-2 low-s requirement)
-    // TODO: Check v is valid (27, 28, or properly EIP-155 encoded)
+    // Get secp256k1 constants from crypto module
+    const Crypto = @import("../crypto/crypto.zig");
+
+    // Convert r and s to u256 for comparison
+    const r = std.mem.readInt(u256, &self.r, .big);
+    const s = std.mem.readInt(u256, &self.s, .big);
+
+    // Check r < secp256k1.N
+    if (r == 0 or r >= Crypto.SECP256K1_N) {
+        return error.InvalidSignature;
+    }
+
+    // Check s < secp256k1.N
+    if (s == 0 or s >= Crypto.SECP256K1_N) {
+        return error.InvalidSValue;
+    }
+
+    // Check s <= secp256k1.N/2 (EIP-2 - prevent signature malleability)
+    const half_n = Crypto.SECP256K1_N >> 1;
+    if (s > half_n) {
+        return error.InvalidSValue;
+    }
+
+    // Check v is valid (27, 28 for pre-EIP-155, or chain_id * 2 + 35 + {0,1} for EIP-155)
+    if (self.v < 27) {
+        return error.InvalidVValue;
+    }
 }
 
 // =============================================================================
@@ -1194,7 +1214,7 @@ test "LegacyTransaction: format outputs human-readable string" {
     try std.testing.expect(std.mem.containsAtLeast(u8, result, 1, "dataLen=4"));
 }
 
-test "LegacyTransaction: sign returns error (not implemented)" {
+test "LegacyTransaction: sign and recover" {
     var tx = LegacyTransaction.init(.{
         .nonce = 0,
         .gas_price = 1,
@@ -1205,10 +1225,25 @@ test "LegacyTransaction: sign returns error (not implemented)" {
     });
 
     const private_key = [_]u8{0xab} ** 32;
-    try std.testing.expectError(error.InvalidSignature, tx.sign(private_key, 1));
+
+    // Sign the transaction
+    try tx.sign(private_key, 1);
+
+    // Verify signature was set
+    try std.testing.expect(tx.v != 0);
+    const zero_bytes = [_]u8{0} ** 32;
+    try std.testing.expect(!std.mem.eql(u8, &tx.r, &zero_bytes));
+    try std.testing.expect(!std.mem.eql(u8, &tx.s, &zero_bytes));
+
+    // Recover sender address
+    const recovered = try tx.recoverSender();
+
+    // Verify we got a valid address (non-zero)
+    const zero_addr = [_]u8{0} ** 20;
+    try std.testing.expect(!std.mem.eql(u8, &recovered.bytes, &zero_addr));
 }
 
-test "LegacyTransaction: recoverSender returns error (not implemented)" {
+test "LegacyTransaction: recoverSender fails on unsigned transaction" {
     const tx = LegacyTransaction.init(.{
         .nonce = 0,
         .gas_price = 1,
@@ -1218,7 +1253,8 @@ test "LegacyTransaction: recoverSender returns error (not implemented)" {
         .data = &[_]u8{},
     });
 
-    try std.testing.expectError(error.SignatureRecoveryFailed, tx.recoverSender());
+    // Unsigned transaction (v=0) should fail
+    try std.testing.expectError(error.InvalidSignature, tx.recoverSender());
 }
 
 test "LegacyTransaction: serialize produces valid RLP encoding" {

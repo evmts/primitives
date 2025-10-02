@@ -178,18 +178,37 @@ pub const Authorization = struct {
     ///
     /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
     pub fn create(chain_id: u64, address: Address, nonce: u64, private_key: [32]u8) Error!Authorization {
-        // TODO: This requires secp256k1 ECDSA implementation
-        // Implementation steps:
+        // Get allocator for hash computation
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+        const allocator = gpa.allocator();
+
         // 1. Create unsigned authorization
+        var auth = Authorization{
+            .chain_id = chain_id,
+            .address = address,
+            .nonce = nonce,
+            .v = 0,
+            .r = [_]u8{0} ** 32,
+            .s = [_]u8{0} ** 32,
+        };
+
         // 2. Compute signing hash
-        // 3. Sign hash with secp256k1.sign(hash, private_key)
+        const signing_hash = try auth.signingHash(allocator);
+
+        // 3. Sign hash with secp256k1
+        const Crypto = @import("../crypto/crypto.zig");
+        const signature = Crypto.unaudited_signHash(signing_hash.bytes, private_key) catch {
+            return error.InvalidSignature;
+        };
+
         // 4. Extract v, r, s from signature
+        auth.v = signature.recovery_id();
+        std.mem.writeInt(u256, &auth.r, signature.r, .big);
+        std.mem.writeInt(u256, &auth.s, signature.s, .big);
+
         // 5. Return signed authorization
-        _ = chain_id;
-        _ = address;
-        _ = nonce;
-        _ = private_key;
-        return error.InvalidSignature;
+        return auth;
     }
 
     /// Recover the authority (signer) address from the authorization
@@ -206,14 +225,28 @@ pub const Authorization = struct {
     ///
     /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
     pub fn authority(self: Authorization) Error!Address {
-        // TODO: This requires secp256k1 ECDSA implementation
-        // Implementation steps:
-        // 1. Validate signature values
-        // 2. Compute signing hash
-        // 3. Recover public key: pubkey = secp256k1.recover(hash, r, s, v)
-        // 4. Return Address.fromPublicKey(pubkey.x, pubkey.y)
-        _ = self;
-        return error.SignatureRecoveryFailed;
+        // Get allocator for hash computation
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        defer _ = gpa.deinit();
+        const allocator = gpa.allocator();
+
+        // 1. Compute signing hash
+        const signing_hash = try self.signingHash(allocator);
+
+        // 2. Create signature struct (convert bytes to u256)
+        const Crypto = @import("../crypto/crypto.zig");
+        const r = std.mem.readInt(u256, &self.r, .big);
+        const s = std.mem.readInt(u256, &self.s, .big);
+        const signature = Crypto.Signature{
+            .r = r,
+            .s = s,
+            .v = @intCast(self.v), // v is the recovery_id (0 or 1)
+        };
+
+        // 3. Recover address from signature
+        return Crypto.unaudited_recoverAddress(signing_hash.bytes, signature) catch {
+            return error.SignatureRecoveryFailed;
+        };
     }
 
     /// Validate authorization fields and signature
@@ -504,16 +537,26 @@ pub fn validateSignature(self: SetCodeTransaction) Error!void {
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn sign(self: *SetCodeTransaction, private_key: [32]u8) Error!void {
-    // TODO: This requires secp256k1 ECDSA implementation
-    // Implementation steps:
+    // Get allocator for hash computation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
     // 1. Compute signing hash
-    // 2. Sign hash with secp256k1.sign(hash, private_key)
-    // 3. Extract r, s, and recovery_id from signature
-    // 4. Set v = recovery_id (0 or 1)
-    // 5. Set r and s values
-    _ = self;
-    _ = private_key;
-    return error.InvalidSignature;
+    const signing_hash = try self.signingHash(allocator);
+
+    // 2. Sign hash with secp256k1
+    const Crypto = @import("../crypto/crypto.zig");
+    const signature = Crypto.unaudited_signHash(signing_hash.bytes, private_key) catch {
+        return error.InvalidSignature;
+    };
+
+    // 3. Extract recovery_id from signature (v is just recovery_id, 0 or 1)
+    self.v = signature.recovery_id();
+
+    // 4. Set r and s values (convert u256 to bytes)
+    std.mem.writeInt(u256, &self.r, signature.r, .big);
+    std.mem.writeInt(u256, &self.s, signature.s, .big);
 }
 
 /// Recover sender address from transaction signature
@@ -529,9 +572,28 @@ pub fn sign(self: *SetCodeTransaction, private_key: [32]u8) Error!void {
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn recoverSender(self: SetCodeTransaction) Error!Address {
-    // TODO: This requires secp256k1 ECDSA implementation
-    _ = self;
-    return error.SignatureRecoveryFailed;
+    // Get allocator for hash computation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Compute signing hash
+    const signing_hash = try self.signingHash(allocator);
+
+    // 2. Create signature struct (convert bytes to u256)
+    const Crypto = @import("../crypto/crypto.zig");
+    const r = std.mem.readInt(u256, &self.r, .big);
+    const s = std.mem.readInt(u256, &self.s, .big);
+    const signature = Crypto.Signature{
+        .r = r,
+        .s = s,
+        .v = @intCast(self.v), // For set code transactions, v is the recovery_id (0 or 1)
+    };
+
+    // 3. Recover address from signature
+    return Crypto.unaudited_recoverAddress(signing_hash.bytes, signature) catch {
+        return error.SignatureRecoveryFailed;
+    };
 }
 
 // =============================================================================
@@ -1562,7 +1624,7 @@ test "Authorization: validate checks non-zero r and s" {
     try std.testing.expectError(error.InvalidSignature, auth.validate());
 }
 
-test "SetCodeTransaction: sign returns error (not implemented)" {
+test "SetCodeTransaction: sign and recover" {
     var tx = SetCodeTransaction.init(.{
         .chain_id = 1,
         .nonce = 0,
@@ -1577,7 +1639,17 @@ test "SetCodeTransaction: sign returns error (not implemented)" {
     });
 
     const private_key = [_]u8{0xab} ** 32;
-    try std.testing.expectError(error.InvalidSignature, tx.sign(private_key));
+    try tx.sign(private_key);
+
+    // Verify signature is set
+    const zero_bytes = [_]u8{0} ** 32;
+    try std.testing.expect(!std.mem.eql(u8, &tx.r, &zero_bytes));
+    try std.testing.expect(!std.mem.eql(u8, &tx.s, &zero_bytes));
+    try std.testing.expect(tx.v == 0 or tx.v == 1); // recovery_id
+
+    // Verify we can recover sender
+    const sender = try tx.recoverSender();
+    try std.testing.expect(!std.mem.eql(u8, &sender.bytes, &Address.ZERO.bytes));
 }
 
 test "SetCodeTransaction: recoverSender returns error (not implemented)" {
@@ -1597,23 +1669,27 @@ test "SetCodeTransaction: recoverSender returns error (not implemented)" {
     try std.testing.expectError(error.SignatureRecoveryFailed, tx.recoverSender());
 }
 
-test "Authorization: create returns error (not implemented)" {
+test "Authorization: create and verify signature" {
     const addr = try Address.fromHex("0x1111111111111111111111111111111111111111");
     const private_key = [_]u8{0xab} ** 32;
 
-    try std.testing.expectError(error.InvalidSignature, Authorization.create(1, addr, 0, private_key));
+    const auth = try Authorization.create(1, addr, 0, private_key);
+
+    // Verify signature is set
+    const zero_bytes = [_]u8{0} ** 32;
+    try std.testing.expect(!std.mem.eql(u8, &auth.r, &zero_bytes));
+    try std.testing.expect(!std.mem.eql(u8, &auth.s, &zero_bytes));
+    try std.testing.expect(auth.v == 0 or auth.v == 1); // recovery_id
 }
 
-test "Authorization: authority returns error (not implemented)" {
+test "Authorization: authority recovers signer" {
     const addr = try Address.fromHex("0x1111111111111111111111111111111111111111");
-    const auth = Authorization{
-        .chain_id = 1,
-        .address = addr,
-        .nonce = 0,
-        .v = 0,
-        .r = [_]u8{1} ** 32,
-        .s = [_]u8{1} ** 32,
-    };
+    const private_key = [_]u8{0xab} ** 32;
 
-    try std.testing.expectError(error.SignatureRecoveryFailed, auth.authority());
+    // Create signed authorization
+    const auth = try Authorization.create(1, addr, 0, private_key);
+
+    // Recover the authority (signer address)
+    const authority = try auth.authority();
+    try std.testing.expect(!std.mem.eql(u8, &authority.bytes, &Address.ZERO.bytes));
 }

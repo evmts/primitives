@@ -400,16 +400,26 @@ pub fn validateSignature(self: BlobTransaction) Error!void {
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn sign(self: *BlobTransaction, private_key: [32]u8) Error!void {
-    // TODO: This requires secp256k1 ECDSA implementation
-    // Implementation steps:
-    // 1. Compute signing hash: hash = keccak256(0x03 || rlp([chain_id, nonce, ...]))
-    // 2. Sign hash with secp256k1.sign(hash, private_key)
-    // 3. Extract r, s, and recovery_id from signature
-    // 4. Set v = recovery_id (0 or 1)
-    // 5. Set r and s values
-    _ = self;
-    _ = private_key;
-    return error.InvalidSignature; // Placeholder until secp256k1 is implemented
+    // Get allocator for hash computation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Compute signing hash
+    const signing_hash = try self.signingHash(allocator);
+
+    // 2. Sign hash with secp256k1
+    const Crypto = @import("../crypto/crypto.zig");
+    const signature = Crypto.unaudited_signHash(signing_hash.bytes, private_key) catch {
+        return error.InvalidSignature;
+    };
+
+    // 3. Extract recovery_id from signature (v is just recovery_id, 0 or 1)
+    self.v = signature.recovery_id();
+
+    // 4. Set r and s values (convert u256 to bytes)
+    std.mem.writeInt(u256, &self.r, signature.r, .big);
+    std.mem.writeInt(u256, &self.s, signature.s, .big);
 }
 
 /// Recover sender address from transaction signature
@@ -425,9 +435,28 @@ pub fn sign(self: *BlobTransaction, private_key: [32]u8) Error!void {
 ///
 /// NOTE: Requires secp256k1 ECDSA implementation (not yet available)
 pub fn recoverSender(self: BlobTransaction) Error!Address {
-    // TODO: This requires secp256k1 ECDSA implementation
-    _ = self;
-    return error.SignatureRecoveryFailed; // Placeholder until secp256k1 is implemented
+    // Get allocator for hash computation
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    // 1. Compute signing hash
+    const signing_hash = try self.signingHash(allocator);
+
+    // 2. Create signature struct (convert bytes to u256)
+    const Crypto = @import("../crypto/crypto.zig");
+    const r = std.mem.readInt(u256, &self.r, .big);
+    const s = std.mem.readInt(u256, &self.s, .big);
+    const signature = Crypto.Signature{
+        .r = r,
+        .s = s,
+        .v = @intCast(self.v), // For blob transactions, v is the recovery_id (0 or 1)
+    };
+
+    // 3. Recover address from signature
+    return Crypto.unaudited_recoverAddress(signing_hash.bytes, signature) catch {
+        return error.SignatureRecoveryFailed;
+    };
 }
 
 // =============================================================================
@@ -1421,7 +1450,7 @@ test "BlobTransaction: calculateBlobBaseFee with excess" {
     try std.testing.expect(fee >= MIN_BLOB_BASE_FEE);
 }
 
-test "BlobTransaction: sign returns error (not implemented)" {
+test "BlobTransaction: sign and recover" {
     var valid_hash = Hash.ZERO;
     valid_hash.bytes[0] = BLOB_COMMITMENT_VERSION;
 
@@ -1440,7 +1469,17 @@ test "BlobTransaction: sign returns error (not implemented)" {
     });
 
     const private_key = [_]u8{0xab} ** 32;
-    try std.testing.expectError(error.InvalidSignature, tx.sign(private_key));
+    try tx.sign(private_key);
+
+    // Verify signature is set
+    const zero_bytes = [_]u8{0} ** 32;
+    try std.testing.expect(!std.mem.eql(u8, &tx.r, &zero_bytes));
+    try std.testing.expect(!std.mem.eql(u8, &tx.s, &zero_bytes));
+    try std.testing.expect(tx.v == 0 or tx.v == 1); // recovery_id
+
+    // Verify we can recover sender
+    const sender = try tx.recoverSender();
+    try std.testing.expect(!std.mem.eql(u8, &sender.bytes, &Address.ZERO.bytes));
 }
 
 test "BlobTransaction: format outputs human-readable string" {
