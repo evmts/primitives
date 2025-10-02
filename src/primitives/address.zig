@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Keccak256 = std.crypto.hash.sha3.Keccak256;
+const RLP = @import("../encoding/rlp.zig");
 
 /// Represents a 20-byte Ethereum address
 ///
@@ -313,11 +314,7 @@ pub fn toU256(self: Address) u256 {
 /// const contract_addr = try Address.create(allocator, deployer, 42);
 /// ```
 pub fn create(allocator: Allocator, deployer: Address, nonce: u64) !Address {
-    // TODO: This is a simplified RLP implementation
-    // Will be replaced with proper RLP encoding once rlp.zig is implemented
-    _ = allocator; // Will be needed for proper RLP implementation
-
-    // Convert nonce to bytes, stripping leading zeros
+    // Convert nonce to minimal big-endian bytes (strip leading zeros)
     var nonce_bytes: [8]u8 = undefined;
     std.mem.writeInt(u64, &nonce_bytes, nonce, .big);
 
@@ -331,42 +328,14 @@ pub fn create(allocator: Allocator, deployer: Address, nonce: u64) !Address {
     // If nonce is 0, use empty slice
     const nonce_slice = if (nonce == 0) &[_]u8{} else nonce_bytes[nonce_start..];
 
-    // Build simple RLP encoding using fixed buffer: [address, nonce]
-    var rlp_data: [64]u8 = undefined; // Max size for this encoding
-    var rlp_len: usize = 0;
-
-    // Calculate total payload length
-    const addr_len = 1 + 20; // 0x94 (0x80 + 20) + 20 bytes
-    const nonce_encoded_len = if (nonce == 0) 1 else if (nonce_slice.len == 1 and nonce_slice[0] < 0x80) 1 else 1 + nonce_slice.len;
-    const total_len = addr_len + nonce_encoded_len;
-
-    // RLP list header
-    rlp_data[rlp_len] = 0xc0 + @as(u8, @intCast(total_len));
-    rlp_len += 1;
-
-    // Address (20 bytes)
-    rlp_data[rlp_len] = 0x80 + 20;
-    rlp_len += 1;
-    @memcpy(rlp_data[rlp_len .. rlp_len + 20], &deployer.bytes);
-    rlp_len += 20;
-
-    // Nonce
-    if (nonce == 0) {
-        rlp_data[rlp_len] = 0x80;
-        rlp_len += 1;
-    } else if (nonce_slice.len == 1 and nonce_slice[0] < 0x80) {
-        rlp_data[rlp_len] = nonce_slice[0];
-        rlp_len += 1;
-    } else {
-        rlp_data[rlp_len] = 0x80 + @as(u8, @intCast(nonce_slice.len));
-        rlp_len += 1;
-        @memcpy(rlp_data[rlp_len .. rlp_len + nonce_slice.len], nonce_slice);
-        rlp_len += nonce_slice.len;
-    }
+    // Encode [deployer_address, nonce] using proper RLP
+    const items = [_][]const u8{ &deployer.bytes, nonce_slice };
+    const rlp_data = try RLP.encodeList(allocator, &items);
+    defer allocator.free(rlp_data);
 
     // Hash the RLP encoded data
     var hash: [32]u8 = undefined;
-    Keccak256.hash(rlp_data[0..rlp_len], &hash, .{});
+    Keccak256.hash(rlp_data, &hash, .{});
 
     // Take last 20 bytes as address
     var address: Address = undefined;
