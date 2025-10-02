@@ -12,7 +12,7 @@ Successfully completed all TODOs that can be implemented without external depend
 
 ### Final Status
 - **TODOs Resolved**: 14 (implemented)
-- **TODOs Documented**: 26 (external dependencies + intentional design)
+- **TODOs Remaining**: 14 (all secp256k1-related)
 - **Test Status**: ✅ All 382 tests passing
 - **Code Quality**: ✅ Compiles cleanly with Zig 0.15.1
 
